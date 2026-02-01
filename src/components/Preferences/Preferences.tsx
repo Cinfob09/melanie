@@ -1,309 +1,244 @@
-import React, { useState } from 'react';
-import { Lock, Mail, Eye, EyeOff, User, AlertCircle, ShieldCheck } from 'lucide-react';
-interface LoginFormProps {
-onLogin: (email: string, password: string) => Promise<boolean>;
-onRegister?: (
-email: string,
-password: string,
-fullName: string
-) => Promise<boolean>;
-loading?: boolean;
+import React, { useState, useEffect } from 'react';
+import { Save, Clock, Bell, Loader2, ArrowLeft, CheckCircle, AlertCircle } from 'lucide-react';
+import { usePreferences } from '../../hooks/usePreferences';
+
+interface PreferencesProps {
+  onBack?: () => void;
 }
-const LoginForm: React.FC<LoginFormProps> = ({
-onLogin,
-onRegister,
-loading,
-}) => {
-const [isRegistering, setIsRegistering] = useState(false);
-// Form States
-const [email, setEmail] = useState('');
-const [fullName, setFullName] = useState('');
-const [password, setPassword] = useState('');
-const [confirmPassword, setConfirmPassword] = useState('');
-// Legal Consent State
-const [acceptedTerms, setAcceptedTerms] = useState(false);
-// UI States
-const [showPassword, setShowPassword] = useState(false);
-const [error, setError] = useState('');
-const [isSubmitting, setIsSubmitting] = useState(false);
-const isLoading = isSubmitting || loading;
-const handleSubmit = async (e: React.FormEvent) => {
-e.preventDefault();
-setError('');
-setIsSubmitting(true);try {
-  if (isRegistering) {
-    // --- VALIDATIONS INSCRIPTION ---
 
-    // 1. Validation Légale (Obligatoire)
-    if (!acceptedTerms) {
-      throw new Error('Vous devez accepter les conditions d\'utilisation et la politique de confidentialité pour créer un compte.');
-    }
+const Preferences: React.FC<PreferencesProps> = ({ onBack }) => {
+  const { preferences, updatePreferences, loading } = usePreferences();
+  
+  const [formData, setFormData] = useState({
+    business_hours_start: '09:00',
+    business_hours_end: '17:00',
+    min_time_between_appointments: 60,
+    notification_days_before: 1,
+    show_upcoming_appointments: true,
+    show_frequency_reminders: true
+  });
 
-    // 2. Validations Standards
-    if (!fullName.trim()) {
-      throw new Error('Le nom complet est requis.');
-    }
-    if (password.length < 6) {
-      throw new Error('Le mot de passe doit contenir au moins 6 caractères.');
-    }
-    if (password !== confirmPassword) {
-      throw new Error('Les mots de passe ne correspondent pas.');
-    }
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
-    if (onRegister) {
-      try {
-        const success = await onRegister(email, password, fullName);
-        if (!success) {
-          throw new Error("Impossible de créer le compte. L'email existe peut-être déjà.");
-        }
-      } catch (regError: any) {
-        throw regError;
+  useEffect(() => {
+    if (preferences) {
+      setFormData({
+        business_hours_start: preferences.business_hours_start?.slice(0, 5) || '09:00',
+        business_hours_end: preferences.business_hours_end?.slice(0, 5) || '17:00',
+        min_time_between_appointments: preferences.min_time_between_appointments || 60,
+        notification_days_before: preferences.notification_days_before || 1,
+        show_upcoming_appointments: preferences.show_upcoming_appointments ?? true,
+        show_frequency_reminders: preferences.show_frequency_reminders ?? true
+      });
+    }
+  }, [preferences]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setMessage(null);
+
+    try {
+      const success = await updatePreferences(formData);
+      if (success) {
+        setMessage({ type: 'success', text: 'Préférences enregistrées avec succès !' });
+        // Effacer le message après 3 secondes
+        setTimeout(() => setMessage(null), 3000);
+      } else {
+        throw new Error('Erreur lors de la sauvegarde');
       }
-    } else {
-      throw new Error("La fonction d'inscription n'est pas disponible.");
+    } catch (err) {
+      setMessage({ type: 'error', text: 'Impossible de sauvegarder les préférences.' });
+    } finally {
+      setSaving(false);
     }
-  } else {
-    // --- LOGIQUE CONNEXION ---
-    const success = await onLogin(email, password);
-    if (!success) {
-      throw new Error('Email ou mot de passe incorrect.');
-    }
-  }
-} catch (err: any) {
-  // Gestion des erreurs (Supabase ou locales)
-  let errorMessage = err.message;
+  };
 
-  if (err.message?.includes('Invalid login credentials')) {
-    errorMessage = 'Email ou mot de passe incorrect.';
-  } else if (err.message?.includes('Email not confirmed')) {
-    errorMessage = 'Veuillez confirmer votre email avant de vous connecter.';
-  } else if (err.message?.includes('User already registered')) {
-    errorMessage = 'Cet email est déjà utilisé. Essayez de vous connecter.';
-  } else if (err.message?.includes('Password should be at least')) {
-    errorMessage = 'Le mot de passe doit contenir au moins 6 caractères.';
-  }
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value, type } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value
+    }));
+  };
 
-  setError(errorMessage);
-} finally {
-  setIsSubmitting(false);
-}};
-const toggleMode = () => {
-setIsRegistering(!isRegistering);
-setError('');
-setPassword('');
-setConfirmPassword('');
-setFullName('');
-setAcceptedTerms(false); // Reset de la case à cocher
-};
-return (
-<div className="min-h-screen bg-gray-50 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-<div className="max-w-md w-full space-y-8 bg-white p-8 rounded-2xl shadow-xl">{/* Header */}
-    <div className="text-center">
-      <div className="mx-auto h-16 w-16 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg transform -rotate-6 hover:rotate-0 transition-transform duration-300">
-        <Lock className="h-8 w-8 text-white" />
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full min-h-[400px]">
+        <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
       </div>
-      <h2 className="mt-6 text-3xl font-extrabold text-gray-900 tracking-tight">
-        {isRegistering ? 'Créer un compte pro' : 'Espace Sécurisé'}
-      </h2>
-      <p className="mt-2 text-sm text-gray-500">
-        {isRegistering
-          ? 'Gestion centralisée pour professionnels'
-          : 'Connectez-vous pour accéder à vos outils'}
-      </p>
-    </div>
+    );
+  }
 
-    <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-      <div className="space-y-4">
-        
-        {/* Nom Complet (Inscription seulement) */}
-        {isRegistering && (
-          <div className="animate-fade-in">
-            <label htmlFor="fullName" className="block text-sm font-medium text-gray-700 mb-1">
-              Nom complet
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <User className="h-5 w-5 text-gray-400" />
-              </div>
-              <input
-                id="fullName"
-                name="fullName"
-                type="text"
-                required={isRegistering}
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                disabled={isLoading}
-                className="pl-10 block w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all disabled:bg-gray-100"
-                placeholder="Jean Dupont"
-              />
-            </div>
-          </div>
+  return (
+    <div className="max-w-4xl mx-auto p-4 md:p-6 space-y-6">
+      {/* Header */}
+      <div className="flex items-center gap-4 mb-6">
+        {onBack && (
+          <button 
+            onClick={onBack} 
+            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+            title="Retour"
+          >
+            <ArrowLeft className="w-6 h-6 text-gray-600" />
+          </button>
         )}
-
-        {/* Email */}
         <div>
-          <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
-            Adresse e-mail professionnel
-          </label>
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Mail className="h-5 w-5 text-gray-400" />
-            </div>
-            <input
-              id="email"
-              name="email"
-              type="email"
-              autoComplete="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={isLoading}
-              className="pl-10 block w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all disabled:bg-gray-100"
-              placeholder="nom@entreprise.com"
-            />
-          </div>
+          <h1 className="text-2xl font-bold text-gray-900">Préférences Système</h1>
+          <p className="text-gray-500 text-sm">Configurez le comportement de l'application</p>
         </div>
-
-        {/* Mot de passe */}
-        <div>
-          <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
-            Mot de passe {isRegistering && <span className="text-gray-400 text-xs font-normal">(min. 6 car.)</span>}
-          </label>
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Lock className="h-5 w-5 text-gray-400" />
-            </div>
-            <input
-              id="password"
-              name="password"
-              type={showPassword ? 'text' : 'password'}
-              autoComplete={isRegistering ? 'new-password' : 'current-password'}
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={isLoading}
-              className="pl-10 pr-10 block w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all disabled:bg-gray-100"
-              placeholder="••••••••"
-            />
-            <button
-              type="button"
-              className="absolute inset-y-0 right-0 pr-3 flex items-center"
-              onClick={() => setShowPassword(!showPassword)}
-              disabled={isLoading}
-            >
-              {showPassword ? (
-                <EyeOff className="h-5 w-5 text-gray-400 hover:text-gray-600" />
-              ) : (
-                <Eye className="h-5 w-5 text-gray-400 hover:text-gray-600" />
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* Confirmation (Inscription seulement) */}
-        {isRegistering && (
-          <div className="animate-fade-in">
-            <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1">
-              Confirmer le mot de passe
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Lock className="h-5 w-5 text-gray-400" />
-              </div>
-              <input
-                id="confirmPassword"
-                name="confirmPassword"
-                type="password"
-                required={isRegistering}
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                disabled={isLoading}
-                className="pl-10 block w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all disabled:bg-gray-100"
-                placeholder="••••••••"
-              />
-            </div>
-          </div>
-        )}
-
-        {/* --- SECTION LÉGALE (Inscription seulement) --- */}
-        {isRegistering && (
-          <div className="animate-fade-in bg-blue-50 border border-blue-100 rounded-lg p-3 mt-4">
-            <div className="flex items-start gap-3">
-              <div className="flex h-5 items-center">
-                <input
-                  id="terms"
-                  name="terms"
-                  type="checkbox"
-                  required
-                  checked={acceptedTerms}
-                  onChange={(e) => setAcceptedTerms(e.target.checked)}
-                  className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
-                />
-              </div>
-              <div className="text-sm">
-                <label htmlFor="terms" className="font-medium text-gray-700 cursor-pointer">
-                  J'accepte les <a href="#" className="text-blue-600 hover:underline">Conditions d'utilisation</a> et la <a href="#" className="text-blue-600 hover:underline">Politique de confidentialité</a>.
-                </label>
-                <p className="text-gray-500 text-xs mt-1 leading-relaxed">
-                  <ShieldCheck className="w-3 h-3 inline mr-1 text-blue-500" />
-                  Je reconnais que Outils Internes agit en tant que sous-traitant (Data Processor) pour l'hébergement sécurisé de mes données professionnelles.
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
-      {/* Message d'erreur */}
-      {error && (
-        <div className="animate-fade-in bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg">
-          <div className="flex items-center">
-            <AlertCircle className="h-5 w-5 text-red-600 mr-3 flex-shrink-0" />
-            <p className="text-sm text-red-700 font-medium">{error}</p>
-          </div>
+      {message && (
+        <div className={`p-4 rounded-lg flex items-center gap-3 ${
+          message.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+        } animate-in fade-in slide-in-from-top-2`}>
+          {message.type === 'success' ? <CheckCircle className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+          <span className="font-medium">{message.text}</span>
         </div>
       )}
 
-      {/* Boutons d'action */}
-      <div className="space-y-4">
-        <button
-          type="submit"
-          disabled={isLoading}
-          className={`group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-bold rounded-lg text-white transition-all transform active:scale-95 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
-            isLoading 
-              ? 'bg-blue-400 cursor-wait' 
-              : 'bg-blue-600 hover:bg-blue-700 shadow-md hover:shadow-lg'
-          }`}
-        >
-          {isLoading ? (
-            <div className="flex items-center">
-              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-              Traitement...
+      <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Section Horaires */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-200 bg-gray-50/50">
+            <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+              <Clock className="w-5 h-5 text-blue-600" />
+              Horaires & Rendez-vous
+            </h2>
+          </div>
+          
+          <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Début de journée
+              </label>
+              <input
+                type="time"
+                name="business_hours_start"
+                value={formData.business_hours_start}
+                onChange={handleChange}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
             </div>
-          ) : isRegistering ? (
-            "S'inscrire et Accepter"
-          ) : (
-            'Se connecter'
-          )}
-        </button>
 
-        <div className="text-center pt-2">
-          <p className="text-sm text-gray-600">
-            {isRegistering ? 'Déjà un compte ?' : 'Pas encore de compte ?'}
-          </p>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Fin de journée
+              </label>
+              <input
+                type="time"
+                name="business_hours_end"
+                value={formData.business_hours_end}
+                onChange={handleChange}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Temps minimum entre les rendez-vous (minutes)
+              </label>
+              <select
+                name="min_time_between_appointments"
+                value={formData.min_time_between_appointments}
+                onChange={handleChange}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="15">15 minutes</option>
+                <option value="30">30 minutes</option>
+                <option value="45">45 minutes</option>
+                <option value="60">60 minutes</option>
+                <option value="90">90 minutes</option>
+              </select>
+              <p className="mt-1 text-sm text-gray-500">
+                Utilisé pour calculer les avertissements de conflits d'horaire.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Section Notifications */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-200 bg-gray-50/50">
+            <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+              <Bell className="w-5 h-5 text-blue-600" />
+              Générateur de Notifications
+            </h2>
+          </div>
+          
+          <div className="p-6 space-y-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Avertir des rendez-vous à venir (jours avant)
+              </label>
+              <input
+                type="number"
+                name="notification_days_before"
+                value={formData.notification_days_before}
+                onChange={handleChange}
+                min="1"
+                max="7"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex items-start gap-3">
+                <div className="flex h-6 items-center">
+                  <input
+                    id="show_upcoming_appointments"
+                    name="show_upcoming_appointments"
+                    type="checkbox"
+                    checked={formData.show_upcoming_appointments}
+                    onChange={handleChange}
+                    className="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-600"
+                  />
+                </div>
+                <div className="text-sm">
+                  <label htmlFor="show_upcoming_appointments" className="font-medium text-gray-900">
+                    Activer les rappels de rendez-vous
+                  </label>
+                  <p className="text-gray-500">Génère une notification le matin pour les rendez-vous de la journée.</p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <div className="flex h-6 items-center">
+                  <input
+                    id="show_frequency_reminders"
+                    name="show_frequency_reminders"
+                    type="checkbox"
+                    checked={formData.show_frequency_reminders}
+                    onChange={handleChange}
+                    className="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-600"
+                  />
+                </div>
+                <div className="text-sm">
+                  <label htmlFor="show_frequency_reminders" className="font-medium text-gray-900">
+                    Activer les rappels de fréquence client
+                  </label>
+                  <p className="text-gray-500">Génère une notification si un client dépasse sa fréquence habituelle sans rendez-vous.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end pt-4">
           <button
-            type="button"
-            onClick={toggleMode}
-            disabled={isLoading}
-            className="mt-1 text-sm font-bold text-blue-600 hover:text-blue-500 transition-colors disabled:opacity-50"
+            type="submit"
+            disabled={saving}
+            className="flex items-center gap-2 bg-blue-600 text-white px-8 py-3 rounded-lg hover:bg-blue-700 active:bg-blue-800 transition-colors font-semibold shadow-md disabled:opacity-70"
           >
-            {isRegistering ? 'Se connecter' : 'Créer un compte professionnel'}
+            {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+            Enregistrer les modifications
           </button>
         </div>
-      </div>
-    </form>
-  </div>
-</div>
-);
+      </form>
+    </div>
+  );
 };
-export default LoginForm;
+
+export default Preferences;

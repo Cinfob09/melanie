@@ -43,10 +43,10 @@ type ViewType =
 function App() {
   // 1. Authentification & Préférences
   const { user, login, logout, register, loading: authLoading } = useAuth();
-  const { preferencesExist } = usePreferences();
+  const { preferencesExist, createDefaultPreferences } = usePreferences();
   const [appReady, setAppReady] = useState(false);
 
-  // 2. Données métier - ✅ TOUJOURS APPELER LES HOOKS
+  // 2. Données métier
   const { clients, addClient, updateClient, deleteClient, refreshClients, loading: clientsLoading } =
     useClients();
   const { appointments, addAppointment, updateAppointment, deleteAppointment, loading: appointmentsLoading } =
@@ -65,15 +65,12 @@ function App() {
 
  // --- LOGIQUE : AUTO-REFRESH (Visibility API) ---
   useEffect(() => {
-    // 1. Si l'utilisateur n'est pas connecté (Page Login), ON NE TOUCHE À RIEN.
-    // Cela empêche le refresh pendant la saisie du mot de passe.
     if (!user) return;
 
     const checkReload = () => {
       const needsReload = sessionStorage.getItem('needs_refresh');
       if (needsReload === 'true') {
         sessionStorage.removeItem('needs_refresh');
-        // On recharge uniquement si on revient sur la page
         window.location.reload();
       }
     };
@@ -81,8 +78,6 @@ function App() {
     const markAsLeft = () => sessionStorage.setItem('needs_refresh', 'true');
 
     const handleVisibilityChange = () => {
-      // On utilise UNIQUEMENT visibilitychange (changer d'onglet / réduire l'app)
-      // On évite 'blur' qui se déclenche quand on clique sur un input ou un password manager
       if (document.visibilityState === 'hidden') {
         markAsLeft();
       } else if (document.visibilityState === 'visible') {
@@ -95,38 +90,44 @@ function App() {
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [user]); // 2. Ajout de [user] pour que le code se réactive une fois connecté
+  }, [user]);
 
-  // --- LOGIQUE : VÉRIFICATION DES PRÉFÉRENCES (CORRIGÉE) ---
-  // ✅ REMPLACER PAR :
+  // --- LOGIQUE : VÉRIFICATION DES PRÉFÉRENCES ---
   useEffect(() => {
-    console.log('🔍 Preferences check START', { hasUser: !!user });
-
     const checkUserPreferences = async () => {
+      // Si pas d'utilisateur ou si admin, pas besoin de préférences utilisateur
       if (!user) {
-        console.log('✅ No user, app ready');
         setAppReady(true);
         return;
       }
 
       if (user.role === 'admin') {
-        console.log('✅ Admin user, app ready');
         setAppReady(true);
+        // Redirection admin si nécessaire
         if (window.location.pathname === '/') {
           window.history.pushState({}, '', '/dashboard');
         }
         return;
       }
 
-      console.log('🔍 Checking preferences for user...');
-      // ... reste du code
-
-      setAppReady(true);
-      console.log('✅ App ready after preferences check');
+      // Vérification et création des préférences par défaut
+      try {
+        const exists = await preferencesExist();
+        if (!exists) {
+          console.log('Creating default preferences...');
+          await createDefaultPreferences();
+        }
+      } catch (error) {
+        console.error('Error checking preferences:', error);
+      } finally {
+        setAppReady(true);
+      }
     };
 
-    checkUserPreferences();
-  }, [user, preferencesExist]);
+    if (!authLoading) {
+      checkUserPreferences();
+    }
+  }, [user, authLoading]); // Retiré preferencesExist/createDefaultPreferences des deps pour éviter boucles
 
   const toggleMenu = () => setIsSidebarOpen(!isSidebarOpen);
 
@@ -140,7 +141,10 @@ function App() {
   if (authLoading || !appReady) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
+        <div className="flex flex-col items-center">
+          <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+          <p className="text-gray-600 font-medium">Chargement de l'application...</p>
+        </div>
       </div>
     );
   }
@@ -181,7 +185,6 @@ function App() {
       case 'dashboard':
         return (
           <Dashboard
-            user={user}
             {...dataProps}
             onNavigate={setCurrentView}
             {...commonProps}
@@ -228,24 +231,25 @@ function App() {
       case 'analytics':
         return <Analytics {...commonProps} />;
       case 'preferences':
-        return <Preferences />;
+        // Ajout du bouton retour vers Settings
+        return <Preferences onBack={() => setCurrentView('settings')} />;
       case 'admin-payments':
         return user.role === 'admin' ? (
           <AdminDashboard onLogout={logout} />
         ) : (
-          <Dashboard user={user} {...dataProps} {...commonProps} />
+          <Dashboard {...dataProps} onNavigate={setCurrentView} {...commonProps} />
         );
       case 'users':
         return user.role === 'admin' ? (
           <UserManagement {...commonProps} />
         ) : (
-          <Dashboard user={user} {...dataProps} {...commonProps} />
+          <Dashboard {...dataProps} onNavigate={setCurrentView} {...commonProps} />
         );
       case 'settings':
-  return <Settings {...commonProps} onNavigate={(view) => setCurrentView(view as ViewType)} />;
+        return <Settings {...commonProps} onNavigate={(view) => setCurrentView(view as ViewType)} />;
       
       default:
-        return <Dashboard user={user} {...dataProps} {...commonProps} />;
+        return <Dashboard {...dataProps} onNavigate={setCurrentView} {...commonProps} />;
     }
   };
 

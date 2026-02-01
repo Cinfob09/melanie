@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import { Lock, Mail, Eye, EyeOff, User, AlertCircle, ShieldCheck, Fingerprint } from 'lucide-react';
+import { Lock, Mail, Eye, EyeOff, User, AlertCircle, ShieldCheck } from 'lucide-react';
 import LegalModal from './LegalModal';
-import { loginWithPasskey, registerPasskey } from '../services/passkeyService';
 
 interface LoginFormProps {
   onLogin: (email: string, password: string) => Promise<boolean>;
@@ -37,24 +36,6 @@ const LoginForm: React.FC<LoginFormProps> = ({
 
   const isLoading = isSubmitting || loading;
 
-  const handlePasskeyLogin = async () => {
-    if (!email) {
-      setError("Veuillez entrer votre email pour utiliser la Passkey");
-      return;
-    }
-    
-    setIsSubmitting(true);
-    setError('');
-    
-    try {
-      await loginWithPasskey(email);
-      // Pas besoin de redirection manuelle, le auth listener de App.tsx va détecter la session
-    } catch (err: any) {
-      setError(err.message || "Impossible de se connecter avec la Passkey");
-      setIsSubmitting(false);
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -75,28 +56,10 @@ const LoginForm: React.FC<LoginFormProps> = ({
 
           const success = await onRegister(email, password, fullName, acceptanceDate);
           
-          if (success) {
-            // PROPOSITION PASSKEY APRÈS INSCRIPTION
-            // Note : onRegister a créé le user mais on doit être connecté pour créer la passkey
-            // useAuth.register connecte généralement l'utilisateur automatiquement via Supabase
-            
-            // On attend un court instant que la session soit propagée
-            setTimeout(async () => {
-                const wantPasskey = window.confirm("Compte créé avec succès ! \n\nVoulez-vous configurer une Passkey (FaceID/TouchID) maintenant pour vous connecter sans mot de passe la prochaine fois ?");
-                
-                if (wantPasskey) {
-                    try {
-                        await registerPasskey("Mon Appareil Principal");
-                        alert("Passkey configurée !");
-                    } catch (pkErr) {
-                        console.error("Erreur passkey post-signup", pkErr);
-                        // On ne bloque pas le flux principal, l'utilisateur est inscrit
-                    }
-                }
-            }, 500);
-          } else {
+          if (!success) {
              throw new Error("Impossible de créer le compte (Email existant ?).");
           }
+          // Succès : La redirection sera gérée par le changement d'état d'authentification dans App.tsx
         } else {
           throw new Error("Inscription non disponible.");
         }
@@ -112,7 +75,6 @@ const LoginForm: React.FC<LoginFormProps> = ({
       setError(msg);
       setIsSubmitting(false);
     }
-    // Note: Si succès, setIsSubmitting reste true jusqu'au unmount/redirection
   };
 
   const toggleMode = () => {
@@ -304,20 +266,6 @@ const LoginForm: React.FC<LoginFormProps> = ({
                 </div>
               ) : isRegistering ? "S'inscrire et Accepter" : 'Se connecter'}
             </button>
-
-            {/* Bouton Passkey */}
-            {!isRegistering && (
-              <button
-                type="button"
-                onClick={handlePasskeyLogin}
-                disabled={isLoading || !email}
-                className="w-full flex justify-center items-center py-3 px-4 border border-gray-300 rounded-xl shadow-sm bg-white text-sm font-bold text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
-                title={!email ? "Entrez votre email d'abord" : ""}
-              >
-                <Fingerprint className="h-5 w-5 mr-2 text-blue-600" />
-                Se connecter avec Passkey
-              </button>
-            )}
 
             <div className="text-center mt-4">
               <p className="text-sm text-gray-600 mb-1">

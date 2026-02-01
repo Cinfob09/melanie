@@ -62,6 +62,9 @@ function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const { toasts, showToast, removeToast } = useToast();
+  console.log("Supabase URL:", process.env.NEXT_PUBLIC_SUPABASE_URL);
+
+
 
  // --- LOGIQUE : AUTO-REFRESH (Visibility API) ---
   useEffect(() => {

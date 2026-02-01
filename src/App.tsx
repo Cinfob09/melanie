@@ -62,7 +62,7 @@ function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const { toasts, showToast, removeToast } = useToast();
-  console.log("Supabase URL:", process.env.NEXT_PUBLIC_SUPABASE_URL);
+  console.log("Supabase URL:", import.meta.env.VITE_SUPABASE_URL);
 
 
 

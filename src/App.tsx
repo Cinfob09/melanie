@@ -24,6 +24,7 @@ import PaymentWarningModal from './components/Payment/PaymentWarningModal';
 import { useToast } from './hooks/useToast';
 import ToastContainer from './components/Toast/ToastContainer';
 import { ShowToastFunction } from './types/toast';
+import { useNotificationGenerator } from './hooks/useNotificationGenerator';
 
 // --- TYPES ---
 type ViewType =
@@ -46,11 +47,16 @@ function App() {
   const [appReady, setAppReady] = useState(false);
 
   // 2. Données métier - ✅ TOUJOURS APPELER LES HOOKS
-  const { clients, addClient, updateClient, deleteClient, refreshClients } =
+  const { clients, addClient, updateClient, deleteClient, refreshClients, loading: clientsLoading } =
     useClients();
-  const { appointments, addAppointment, updateAppointment, deleteAppointment } =
+  const { appointments, addAppointment, updateAppointment, deleteAppointment, loading: appointmentsLoading } =
     useAppointments();
 
+  const isDataLoading = (clientsLoading || appointmentsLoading) || (clients.length > 0 && appointments.length === 0);
+
+  // 4. On passe "isDataLoading" au générateur
+  useNotificationGenerator(appointments, clients, isDataLoading);
+  
   // 3. États de l'interface
   const [currentView, setCurrentView] = useState<ViewType>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -228,11 +234,8 @@ function App() {
           <Dashboard user={user} {...dataProps} {...commonProps} />
         );
       case 'settings':
-        return user.role === 'admin' ? (
-          <Settings {...commonProps} />
-        ) : (
-          <Dashboard user={user} {...dataProps} {...commonProps} />
-        );
+  return <Settings {...commonProps} onNavigate={(view) => setCurrentView(view as ViewType)} />;
+      
       default:
         return <Dashboard user={user} {...dataProps} {...commonProps} />;
     }

@@ -10,7 +10,9 @@ import {
   HelpCircle,
   Plus,
   Trash2,
+  Building, // Nouvel icône pour l'entreprise
 } from 'lucide-react';
+import { supabase } from '../../lib/supabase'; // Nécessaire pour charger/sauvegarder les infos entreprise
 import {
   usePreferences,
   FrequencyOption,
@@ -18,14 +20,26 @@ import {
 } from '../../hooks/usePreferences';
 
 const Preferences: React.FC = () => {
-  const { preferences, loading, createDefaultPreferences, updatePreferences } =
+  const { preferences, loading: prefLoading, createDefaultPreferences, updatePreferences } =
     usePreferences();
 
   const [currentStep, setCurrentStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [dataLoaded, setDataLoaded] = useState(false);
 
+  // État du formulaire combiné (Entreprise + Préférences)
   const [formData, setFormData] = useState({
+    // --- Infos Entreprise (auth.users metadata) ---
+    companyName: '',
+    address: '',
+    phone: '',
+    website: '',
+    neq: '',
+    tps: '',
+    tvq: '',
+
+    // --- Préférences (user_settings table) ---
     min_time_between_appointments: 90,
     business_hours_start: '08:00',
     business_hours_end: '18:00',
@@ -34,7 +48,7 @@ const Preferences: React.FC = () => {
     expense_categories: [] as ExpenseCategory[],
   });
 
-  // États pour les nouveaux items
+  // États pour les nouveaux items (Fréquences/Catégories)
   const [newFrequency, setNewFrequency] = useState({ label: '', days: '' });
   const [newCategory, setNewCategory] = useState('');
 
@@ -56,27 +70,78 @@ const Preferences: React.FC = () => {
     { value: 'other', label: 'Autre' },
   ];
 
+  // --- CHARGEMENT DES DONNÉES (LIVE LOADING) ---
   useEffect(() => {
-    if (preferences) {
-      setFormData({
-        min_time_between_appointments: preferences.min_time_between_appointments,
-        business_hours_start: preferences.business_hours_start.slice(0, 5),
-        business_hours_end: preferences.business_hours_end.slice(0, 5),
-        notification_days_before: preferences.notification_days_before,
-        frequency_options: preferences.frequency_options,
-        expense_categories: preferences.expense_categories,
-      });
-      setCurrentStep(4);
-    } else {
-      setFormData(prev => ({
-        ...prev,
-        frequency_options: defaultFrequencies,
-        expense_categories: defaultCategories,
-      }));
-    }
+    // Remplacer la partie chargement user_metadata par ceci :
+const { data: profile } = await supabase
+  .from('user_profiles')
+  .select('*')
+  .eq('id', user.id)
+  .single();
+
+let companyData = {
+  companyName: profile?.company_name || '',
+  address: profile?.company_address || '',
+  phone: profile?.company_phone || '',
+  website: profile?.company_website || '',
+  neq: profile?.company_neq || '',
+  tps: profile?.company_tps || '',
+  tvq: profile?.company_tvq || ''
+};
+        if (user && user.user_metadata) {
+          const meta = user.user_metadata;
+          companyData = {
+            companyName: meta.company_name || '',
+            address: meta.company_address || '',
+            phone: meta.company_phone || '',
+            website: meta.company_website || '',
+            neq: meta.company_neq || '',
+            tps: meta.company_tps || '',
+            tvq: meta.company_tvq || ''
+          };
+        }
+
+        // 2. Charger les préférences (si elles existent via le hook)
+        // Note: preferences vient du hook usePreferences
+        if (preferences) {
+          setFormData(prev => ({
+            ...prev,
+            ...companyData, // Fusionner infos entreprise
+            min_time_between_appointments: preferences.min_time_between_appointments,
+            business_hours_start: preferences.business_hours_start.slice(0, 5),
+            business_hours_end: preferences.business_hours_end.slice(0, 5),
+            notification_days_before: preferences.notification_days_before,
+            frequency_options: preferences.frequency_options,
+            expense_categories: preferences.expense_categories,
+          }));
+        } else {
+          // Si pas de préférences, on met les infos entreprise + défauts
+          setFormData(prev => ({
+            ...prev,
+            ...companyData,
+            frequency_options: defaultFrequencies,
+            expense_categories: defaultCategories,
+          }));
+        }
+        
+        setDataLoaded(true);
+      } catch (e) {
+        console.error("Erreur chargement données", e);
+      }
+    };
+
+    loadAllData();
+    // On ne veut PAS changer d'étape automatiquement ici (setCurrentStep retiré)
   }, [preferences]);
 
+  // --- DÉFINITION DES ÉTAPES ---
   const steps = [
+    {
+      title: 'Informations de l\'entreprise',
+      subtitle: 'Identité et coordonnées fiscales',
+      icon: Building,
+      help: 'Ces informations apparaîtront sur vos factures et documents officiels. Remplissez les champs nécessaires (NEQ, TPS, TVQ) pour votre comptabilité.',
+    },
     {
       title: 'Horaires de travail',
       subtitle: 'Définissez vos heures d\'ouverture',
@@ -109,6 +174,8 @@ const Preferences: React.FC = () => {
     },
   ];
 
+  // --- LOGIQUE UI (Toggle, Add, Remove) ---
+
   const toggleFrequency = (freq: FrequencyOption) => {
     const exists = formData.frequency_options.some(f => f.value === freq.value);
     if (exists) {
@@ -128,11 +195,7 @@ const Preferences: React.FC = () => {
     if (newFrequency.label && newFrequency.days) {
       const days = parseInt(newFrequency.days);
       const value = `custom_${Date.now()}`;
-      const freq: FrequencyOption = {
-        value,
-        label: newFrequency.label,
-        days,
-      };
+      const freq: FrequencyOption = { value, label: newFrequency.label, days };
       setFormData(prev => ({
         ...prev,
         frequency_options: [...prev.frequency_options, freq],
@@ -166,10 +229,7 @@ const Preferences: React.FC = () => {
   const addCustomCategory = () => {
     if (newCategory.trim()) {
       const value = `custom_${Date.now()}`;
-      const cat: ExpenseCategory = {
-        value,
-        label: newCategory.trim(),
-      };
+      const cat: ExpenseCategory = { value, label: newCategory.trim() };
       setFormData(prev => ({
         ...prev,
         expense_categories: [...prev.expense_categories, cat],
@@ -184,6 +244,8 @@ const Preferences: React.FC = () => {
       expense_categories: prev.expense_categories.filter(c => c.value !== value),
     }));
   };
+
+  // --- NAVIGATION ---
 
   const handleNext = () => {
     if (currentStep < steps.length - 1) {
@@ -201,52 +263,65 @@ const Preferences: React.FC = () => {
     }
   };
 
+  // --- SAUVEGARDE GLOBALE ---
   const handleFinish = async () => {
     setSaving(true);
     try {
+      // Remplacer supabase.auth.updateUser par ceci :
+const { error: profileError } = await supabase
+  .from('user_profiles')
+  .update({
+    company_name: formData.companyName,
+    company_address: formData.address,
+    company_phone: formData.phone,
+    company_website: formData.website,
+    company_neq: formData.neq,
+    company_tps: formData.tps,
+    company_tvq: formData.tvq
+  })
+  .eq('id', (await supabase.auth.getUser()).data.user?.id);
+
+if (profileError) throw profileError;
+
+      // 2. Sauvegarder les Préférences (User Settings Table)
+      const prefData = {
+        min_time_between_appointments: formData.min_time_between_appointments,
+        business_hours_start: formData.business_hours_start + ':00',
+        business_hours_end: formData.business_hours_end + ':00',
+        notification_days_before: formData.notification_days_before,
+        frequency_options: formData.frequency_options,
+        expense_categories: formData.expense_categories,
+      };
+
       let success = false;
-      
       if (preferences) {
-        success = await updatePreferences({
-          min_time_between_appointments: formData.min_time_between_appointments,
-          business_hours_start: formData.business_hours_start + ':00',
-          business_hours_end: formData.business_hours_end + ':00',
-          notification_days_before: formData.notification_days_before,
-          frequency_options: formData.frequency_options,
-          expense_categories: formData.expense_categories,
-        });
+        success = await updatePreferences(prefData);
       } else {
+        // Si c'est la première fois, on crée d'abord l'entrée par défaut puis on update
         success = await createDefaultPreferences();
-        
         if (success) {
-          await updatePreferences({
-            min_time_between_appointments: formData.min_time_between_appointments,
-            business_hours_start: formData.business_hours_start + ':00',
-            business_hours_end: formData.business_hours_end + ':00',
-            notification_days_before: formData.notification_days_before,
-            frequency_options: formData.frequency_options,
-            expense_categories: formData.expense_categories,
-          });
+          success = await updatePreferences(prefData);
         }
       }
 
       if (success) {
+        // Tout est bon, on reload pour appliquer partout
         window.location.reload();
       }
     } catch (err) {
-      console.error('Erreur:', err);
-      alert('Une erreur est survenue');
+      console.error('Erreur sauvegarde:', err);
+      alert('Une erreur est survenue lors de la sauvegarde.');
     } finally {
       setSaving(false);
     }
   };
 
-  if (loading) {
+  if (prefLoading && !dataLoaded) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-500 to-indigo-600">
         <div className="bg-white rounded-2xl p-8 shadow-2xl">
           <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
-          <p className="text-gray-600 mt-4 text-center">Chargement...</p>
+          <p className="text-gray-600 mt-4 text-center">Chargement des préférences...</p>
         </div>
       </div>
     );
@@ -310,8 +385,80 @@ const Preferences: React.FC = () => {
 
             {/* Content */}
             <div className="p-6 sm:p-8">
-              {/* Step 0: Horaires */}
+              
+              {/* Step 0 (NEW): Informations Entreprise */}
               {currentStep === 0 && (
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 gap-5">
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">Nom de l'entreprise</label>
+                      <input 
+                        type="text" 
+                        value={formData.companyName}
+                        onChange={e => setFormData({...formData, companyName: e.target.value})}
+                        className="w-full px-4 py-3 text-base border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                        placeholder="Votre Entreprise Inc."
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">Adresse</label>
+                      <input 
+                        type="text" 
+                        value={formData.address}
+                        onChange={e => setFormData({...formData, address: e.target.value})}
+                        className="w-full px-4 py-3 text-base border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                        placeholder="123 Rue Principale..."
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">Téléphone</label>
+                        <input 
+                          type="tel" 
+                          value={formData.phone}
+                          onChange={e => setFormData({...formData, phone: e.target.value})}
+                          className="w-full px-4 py-3 text-base border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">Site Web</label>
+                        <input 
+                          type="text" 
+                          value={formData.website}
+                          onChange={e => setFormData({...formData, website: e.target.value})}
+                          className="w-full px-4 py-3 text-base border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                          placeholder="www.exemple.com"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="pt-4 border-t border-gray-100 mt-2">
+                       <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+                         <Tag className="w-4 h-4 text-blue-600"/> Infos Fiscales (Optionnel)
+                       </h3>
+                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                          <div>
+                            <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">NEQ</label>
+                            <input type="text" value={formData.neq} onChange={e => setFormData({...formData, neq: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg"/>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">TPS</label>
+                            <input type="text" value={formData.tps} onChange={e => setFormData({...formData, tps: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg"/>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">TVQ</label>
+                            <input type="text" value={formData.tvq} onChange={e => setFormData({...formData, tvq: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg"/>
+                          </div>
+                       </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 1: Horaires */}
+              {currentStep === 1 && (
                 <div className="space-y-6">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
@@ -352,8 +499,8 @@ const Preferences: React.FC = () => {
                 </div>
               )}
 
-              {/* Step 1: Espacement */}
-              {currentStep === 1 && (
+              {/* Step 2: Espacement */}
+              {currentStep === 2 && (
                 <div className="space-y-6">
                   <div>
                     <label className="block text-sm font-bold text-gray-700 mb-3 uppercase tracking-wide">
@@ -407,8 +554,8 @@ const Preferences: React.FC = () => {
                 </div>
               )}
 
-              {/* Step 2: Fréquences */}
-              {currentStep === 2 && (
+              {/* Step 3: Fréquences */}
+              {currentStep === 3 && (
                 <div className="space-y-4">
                   <p className="text-gray-600 text-sm mb-4">
                     Cliquez pour sélectionner ou désélectionner :
@@ -507,8 +654,8 @@ const Preferences: React.FC = () => {
                 </div>
               )}
 
-              {/* Step 3: Catégories */}
-              {currentStep === 3 && (
+              {/* Step 4: Catégories */}
+              {currentStep === 4 && (
                 <div className="space-y-4">
                   <p className="text-gray-600 text-sm mb-4">
                     Cliquez pour sélectionner ou désélectionner :
@@ -594,8 +741,8 @@ const Preferences: React.FC = () => {
                 </div>
               )}
 
-              {/* Step 4: Notifications */}
-              {currentStep === 4 && (
+              {/* Step 5: Notifications */}
+              {currentStep === 5 && (
                 <div className="space-y-6">
                   <div>
                     <label className="block text-sm font-bold text-gray-700 mb-3 uppercase tracking-wide">
@@ -673,7 +820,7 @@ const Preferences: React.FC = () => {
                 ) : currentStep === steps.length - 1 ? (
                   <>
                     <Check className="w-5 h-5" />
-                    Terminer
+                    Terminer et Sauvegarder
                   </>
                 ) : (
                   <>
@@ -684,17 +831,6 @@ const Preferences: React.FC = () => {
               </button>
             </div>
           </div>
-
-          {/* Skip Button */}
-          {!preferences && (
-            <button
-              onClick={handleFinish}
-              disabled={saving}
-              className="w-full mt-4 text-white hover:text-white/90 text-sm font-bold py-3 transition-colors backdrop-blur-sm bg-white/10 rounded-xl disabled:opacity-50"
-            >
-              Passer et utiliser les valeurs par défaut →
-            </button>
-          )}
         </div>
       </div>
     </div>

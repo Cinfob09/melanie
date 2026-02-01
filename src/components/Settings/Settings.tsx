@@ -1,13 +1,14 @@
-import React, { useState, useEffect } from 'react';
+ import React, { useState, useEffect } from 'react';
 import { 
-  Menu, Key, Plus, Trash2, Shield, User, Calendar, 
-  Building, MapPin, Phone, Globe, Settings as SettingsIcon,
-  Save, Loader2, Hash, CreditCard, ChevronRight, Mail, X,
+  Menu, Key, Plus, Trash2, Shield, Calendar, 
+  Building, Settings as SettingsIcon,
+  Save, Loader2, ChevronRight, Mail, X,
   AlertTriangle
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Passkey } from '../../types';
 import PasskeyModal from './PasskeyModal';
+import { registerPasskey } from '../../services/passkeyService';
 
 interface SettingsProps {
   onMenuToggle: () => void;
@@ -18,9 +19,15 @@ const Settings: React.FC<SettingsProps> = ({ onMenuToggle, onNavigate }) => {
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [passkeys, setPasskeys] = useState<Passkey[]>([]);
+  
+  // Modals state
   const [isPasskeyModalOpen, setIsPasskeyModalOpen] = useState(false);
   const [deletingPasskey, setDeletingPasskey] = useState<Passkey | null>(null);
+  
+  // Forms state
   const [isSavingCompany, setIsSavingCompany] = useState(false);
+  const [isRegisteringPasskey, setIsRegisteringPasskey] = useState(false);
+  
   const [companyForm, setCompanyForm] = useState({
     companyName: '',
     address: '',
@@ -33,6 +40,7 @@ const Settings: React.FC<SettingsProps> = ({ onMenuToggle, onNavigate }) => {
 
   useEffect(() => {
     loadData();
+    loadPasskeys();
   }, []);
 
   const loadData = async () => {
@@ -57,6 +65,21 @@ const Settings: React.FC<SettingsProps> = ({ onMenuToggle, onNavigate }) => {
       console.error('Error loading settings:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadPasskeys = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data } = await supabase
+      .from('passkeys')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+
+    if (data) {
+      setPasskeys(data as Passkey[]);
     }
   };
 
@@ -86,18 +109,42 @@ const Settings: React.FC<SettingsProps> = ({ onMenuToggle, onNavigate }) => {
   };
 
   const handleCreatePasskey = async (name: string) => {
-    setIsPasskeyModalOpen(false);
-    alert('Passkey créée (Simulation)');
+    setIsRegisteringPasskey(true);
+    try {
+      // Appel au service qui communique avec l'Edge Function et gère le WebAuthn
+      await registerPasskey(name);
+      
+      alert('Passkey ajoutée avec succès ! 🔐');
+      setIsPasskeyModalOpen(false);
+      loadPasskeys(); // Recharger la liste depuis la DB
+    } catch (err: any) {
+      console.error(err);
+      alert("Erreur lors de la création : " + err.message);
+    } finally {
+      setIsRegisteringPasskey(false);
+    }
   };
 
   const handleDeletePasskeyClick = (passkey: Passkey) => {
     setDeletingPasskey(passkey);
   };
 
-  const confirmDeletePasskey = () => {
+  const confirmDeletePasskey = async () => {
     if (deletingPasskey) {
-      console.log('Deleted:', deletingPasskey.id);
-      setDeletingPasskey(null);
+      try {
+        const { error } = await supabase
+          .from('passkeys')
+          .delete()
+          .eq('id', deletingPasskey.id);
+
+        if (error) throw error;
+
+        setPasskeys(prev => prev.filter(p => p.id !== deletingPasskey.id));
+        setDeletingPasskey(null);
+      } catch (err: any) {
+        console.error(err);
+        alert("Erreur lors de la suppression : " + err.message);
+      }
     }
   };
 
@@ -335,11 +382,12 @@ const Settings: React.FC<SettingsProps> = ({ onMenuToggle, onNavigate }) => {
               <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
                 <h3 className="font-semibold text-gray-900 flex items-center gap-2">
                   <Shield className="w-5 h-5 text-gray-600" />
-                  Passkeys
+                  Passkeys (Biométrie)
                 </h3>
                 <button
                   onClick={() => setIsPasskeyModalOpen(true)}
-                  className="flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors"
+                  disabled={isRegisteringPasskey}
+                  className="flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors disabled:opacity-50"
                 >
                   <Plus className="w-4 h-4" />
                   Ajouter
@@ -347,6 +395,13 @@ const Settings: React.FC<SettingsProps> = ({ onMenuToggle, onNavigate }) => {
               </div>
 
               <div className="p-4">
+                {isRegisteringPasskey && (
+                  <div className="mb-4 text-sm text-blue-600 flex items-center gap-2 bg-blue-50 p-3 rounded-lg">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Enregistrement de la clé en cours...
+                  </div>
+                )}
+
                 {passkeys.length > 0 ? (
                   <div className="space-y-2">
                     {passkeys.map((pk) => (
@@ -355,16 +410,24 @@ const Settings: React.FC<SettingsProps> = ({ onMenuToggle, onNavigate }) => {
                         className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors group"
                       >
                         <div className="flex items-center gap-3">
-                          <Key className="w-5 h-5 text-gray-400" />
-                          <span className="text-sm font-medium text-gray-700">
-                            {pk.name}
-                          </span>
+                          <div className="bg-gray-100 p-2 rounded-full">
+                            <Key className="w-4 h-4 text-gray-600" />
+                          </div>
+                          <div>
+                            <span className="text-sm font-medium text-gray-700 block">
+                              {pk.name}
+                            </span>
+                            <span className="text-xs text-gray-400">
+                              Ajouté le {new Date(pk.created_at).toLocaleDateString()}
+                            </span>
+                          </div>
                         </div>
                         <button 
                           onClick={() => handleDeletePasskeyClick(pk)} 
-                          className="text-gray-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-all"
+                          className="text-gray-400 hover:text-red-600 p-2 rounded-full hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100"
+                          title="Supprimer"
                         >
-                          <Trash2 className="w-5 h-5" />
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                     ))}
@@ -375,7 +438,9 @@ const Settings: React.FC<SettingsProps> = ({ onMenuToggle, onNavigate }) => {
                       <Key className="w-6 h-6 text-gray-400" />
                     </div>
                     <p className="text-sm text-gray-500">
-                      Aucune passkey configurée
+                      Aucune passkey configurée.
+                      <br/>
+                      Ajoutez FaceID, TouchID ou une clé USB.
                     </p>
                   </div>
                 )}

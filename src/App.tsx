@@ -63,31 +63,39 @@ function App() {
 
   const { toasts, showToast, removeToast } = useToast();
 
-  // --- LOGIQUE : AUTO-REFRESH (Visibility API) ---
+ // --- LOGIQUE : AUTO-REFRESH (Visibility API) ---
   useEffect(() => {
+    // 1. Si l'utilisateur n'est pas connecté (Page Login), ON NE TOUCHE À RIEN.
+    // Cela empêche le refresh pendant la saisie du mot de passe.
+    if (!user) return;
+
     const checkReload = () => {
       const needsReload = sessionStorage.getItem('needs_refresh');
       if (needsReload === 'true') {
         sessionStorage.removeItem('needs_refresh');
+        // On recharge uniquement si on revient sur la page
         window.location.reload();
       }
     };
+
     const markAsLeft = () => sessionStorage.setItem('needs_refresh', 'true');
 
     const handleVisibilityChange = () => {
-      document.visibilityState === 'hidden' ? markAsLeft() : checkReload();
+      // On utilise UNIQUEMENT visibilitychange (changer d'onglet / réduire l'app)
+      // On évite 'blur' qui se déclenche quand on clique sur un input ou un password manager
+      if (document.visibilityState === 'hidden') {
+        markAsLeft();
+      } else if (document.visibilityState === 'visible') {
+        checkReload();
+      }
     };
 
-    window.addEventListener('blur', markAsLeft);
-    window.addEventListener('focus', checkReload);
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
-      window.removeEventListener('blur', markAsLeft);
-      window.removeEventListener('focus', checkReload);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, []);
+  }, [user]); // 2. Ajout de [user] pour que le code se réactive une fois connecté
 
   // --- LOGIQUE : VÉRIFICATION DES PRÉFÉRENCES (CORRIGÉE) ---
   // ✅ REMPLACER PAR :

@@ -6,35 +6,39 @@ import { usePreferences } from './usePreferences';
 export const useNotificationGenerator = (
   appointments: Appointment[],
   clients: Client[],
-  isLoading: boolean // <--- NOUVEAU : On doit savoir si ça charge encore
+  isLoading: boolean
 ) => {
   const { preferences } = usePreferences();
 
   useEffect(() => {
     const generate = async () => {
-      // 1. SÉCURITÉ : Si ça charge ou si pas de données, on touche à rien !
+      // 1. SÉCURITÉ : Si c'est en chargement, sans préférences ou sans données, on ne fait rien.
+      // On vérifie aussi appointments.length pour éviter de signaler des clients "sans rendez-vous" 
+      // juste parce que la liste des rendez-vous n'est pas encore arrivée.
       if (isLoading || !preferences || clients.length === 0) return;
 
-      // 2. ÉCONOMIE DE REQUÊTES : On vérifie si on a déjà fait le check aujourd'hui
-      const today = new Date().toISOString().split('T')[0];
-      const lastCheck = localStorage.getItem('notification_last_check');
-      const currentUserId = (await supabase.auth.getUser()).data.user?.id;
-
-      // Si on a déjà checké aujourd'hui pour cet user, on arrête tout.
-      if (lastCheck === `${currentUserId}_${today}`) {
-        console.log("Notifications déjà vérifiées aujourd'hui. Stop.");
-        return;
-      }
-
-      if (!currentUserId) return;
-
-      console.log("Génération des notifications en cours...");
-      const notificationsToUpsert = [];
-
       try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const currentUserId = user.id;
+        const today = new Date().toISOString().split('T')[0];
+        const lastCheck = localStorage.getItem('notification_last_check');
+
+        // 2. ÉCONOMIE : Si on a déjà vérifié aujourd'hui pour cet utilisateur, on arrête.
+        if (lastCheck === `${currentUserId}_${today}`) {
+          return;
+        }
+
+        const notificationsToUpsert = [];
+
         // --- A. Rendez-vous à venir (Upcoming) ---
-        if (preferences.show_upcoming_appointments) {
-          const daysAhead = preferences.upcoming_appointments_days || 1;
+        // Note: On utilise 'any' sur preferences ici car certaines props peuvent être dynamiques 
+        // ou manquer dans l'interface stricte selon votre implémentation
+        const prefs = preferences as any;
+
+        if (prefs.show_upcoming_appointments !== false) { 
+          const daysAhead = prefs.upcoming_appointments_days || prefs.notification_days_before || 1;
           const futureDate = new Date();
           futureDate.setDate(futureDate.getDate() + daysAhead);
           const futureDateStr = futureDate.toISOString().split('T')[0];
@@ -55,19 +59,18 @@ export const useNotificationGenerator = (
               date: new Date().toISOString(),
               priority: daysAhead === 1 ? 'high' : 'medium',
               completed: false,
-              client_id: null, // Pas lié à un client spécifique
+              client_id: null,
             });
           }
         }
 
         // --- B. Logique Clients (Manquants & Fréquence) ---
-        if (preferences.show_frequency_reminders) {
+        if (prefs.show_frequency_reminders !== false) {
           for (const client of clients) {
             const clientApts = appointments.filter(a => a.client_id === client.id);
 
             // Cas 1 : Jamais de RDV (Missing)
             if (clientApts.length === 0) {
-               // ATTENTION : C'est ici que ça buggait avant si appointments était vide à cause du chargement
                notificationsToUpsert.push({
                 user_id: currentUserId,
                 type: 'missing_appointment',
@@ -119,26 +122,22 @@ export const useNotificationGenerator = (
 
         // --- C. ENVOI UNIQUE (BATCH) ---
         if (notificationsToUpsert.length > 0) {
-          const { error } = await supabase
+          await supabase
             .from('notifications')
             .upsert(notificationsToUpsert, { 
-              onConflict: 'user_id, client_id, type', // L'index SQL fait le travail ici
+              onConflict: 'user_id, client_id, type', 
               ignoreDuplicates: true 
             });
-
-          if (error) console.error("Erreur save notifs:", error);
-          else console.log(`${notificationsToUpsert.length} notifications traitées.`);
         }
 
-        // Marquer comme fait pour aujourd'hui dans le navigateur
+        // Marquer comme fait pour aujourd'hui
         localStorage.setItem('notification_last_check', `${currentUserId}_${today}`);
 
       } catch (err) {
-        console.error("Erreur générateur notifs:", err);
+        // Erreur silencieuse
       }
     };
 
     generate();
-    // On relance UNIQUEMENT si isLoading passe de true à false, ou si les données changent
   }, [isLoading, appointments.length, clients.length, preferences]); 
 };

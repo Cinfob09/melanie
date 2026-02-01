@@ -17,7 +17,8 @@ interface UseAuthReturn {
   register: (
     email: string,
     password: string,
-    fullName: string
+    fullName: string,
+    termsAcceptedAt: string
   ) => Promise<boolean>;
   loading: boolean;
 }
@@ -172,7 +173,8 @@ export const useAuth = (): UseAuthReturn => {
   const register = async (
     email: string,
     password: string,
-    fullName: string
+    fullName: string,
+    termsAcceptedAt: string
   ): Promise<boolean> => {
     try {
       setLoading(true);
@@ -181,7 +183,8 @@ export const useAuth = (): UseAuthReturn => {
         email,
         password,
         options: {
-          data: { full_name: fullName },
+          data: { full_name: fullName ,
+          terms_accepted_at: termsAcceptedAt },
         },
       });
 

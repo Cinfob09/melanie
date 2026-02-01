@@ -1,0 +1,20 @@
+name: Backup Supabase Live
+
+on:
+  workflow_dispatch: # C'est ce qui crée le bouton pour tester direct
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install DB client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Run dump
+        run: pg_dump "${{ secrets.DB_URL }}" > backup.sql
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: mon-backup-db
+          path: backup.sql

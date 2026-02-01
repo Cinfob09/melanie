@@ -1,13 +1,15 @@
 name: Backup Supabase Live
 
 on:
-  workflow_dispatch: # C'est ce qui crée le bouton pour tester direct
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * *'
 
 jobs:
   backup:
     runs-on: ubuntu-latest
     steps:
-      - name: Install DB client
+      - name: Installer PostgreSQL 17
         run: |
           sudo apt-get update
           sudo apt-get install -y wget gnupg2
@@ -17,10 +19,12 @@ jobs:
           sudo apt-get install -y postgresql-client-17
 
       - name: Run dump
-        run: pg_dump "${{ secrets.DB_URL }}" > backup.sql
+        run: |
+          /usr/lib/postgresql/17/bin/pg_dump "${{ secrets.DB_URL }}" --no-owner --no-privileges > backup.sql
 
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: mon-backup-db
           path: backup.sql
+          retention-days: 30

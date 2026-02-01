@@ -1,14 +1,9 @@
- import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
-  Menu, Key, Plus, Trash2, Shield, Calendar, 
-  Building, Settings as SettingsIcon,
-  Save, Loader2, ChevronRight, Mail, X,
-  AlertTriangle
+  Menu, Building, Settings as SettingsIcon,
+  Save, Loader2, ChevronRight, Mail, Calendar
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { Passkey } from '../../types';
-import PasskeyModal from './PasskeyModal';
-import { registerPasskey } from '../../services/passkeyService';
 
 interface SettingsProps {
   onMenuToggle: () => void;
@@ -18,15 +13,9 @@ interface SettingsProps {
 const Settings: React.FC<SettingsProps> = ({ onMenuToggle, onNavigate }) => {
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [passkeys, setPasskeys] = useState<Passkey[]>([]);
-  
-  // Modals state
-  const [isPasskeyModalOpen, setIsPasskeyModalOpen] = useState(false);
-  const [deletingPasskey, setDeletingPasskey] = useState<Passkey | null>(null);
   
   // Forms state
   const [isSavingCompany, setIsSavingCompany] = useState(false);
-  const [isRegisteringPasskey, setIsRegisteringPasskey] = useState(false);
   
   const [companyForm, setCompanyForm] = useState({
     companyName: '',
@@ -40,7 +29,6 @@ const Settings: React.FC<SettingsProps> = ({ onMenuToggle, onNavigate }) => {
 
   useEffect(() => {
     loadData();
-    loadPasskeys();
   }, []);
 
   const loadData = async () => {
@@ -68,21 +56,6 @@ const Settings: React.FC<SettingsProps> = ({ onMenuToggle, onNavigate }) => {
     }
   };
 
-  const loadPasskeys = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    const { data } = await supabase
-      .from('passkeys')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
-
-    if (data) {
-      setPasskeys(data as Passkey[]);
-    }
-  };
-
   const handleSaveCompany = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSavingCompany(true);
@@ -106,50 +79,6 @@ const Settings: React.FC<SettingsProps> = ({ onMenuToggle, onNavigate }) => {
     } finally {
       setIsSavingCompany(false);
     }
-  };
-
-  const handleCreatePasskey = async (name: string) => {
-    setIsRegisteringPasskey(true);
-    try {
-      // Appel au service qui communique avec l'Edge Function et gère le WebAuthn
-      await registerPasskey(name);
-      
-      alert('Passkey ajoutée avec succès ! 🔐');
-      setIsPasskeyModalOpen(false);
-      loadPasskeys(); // Recharger la liste depuis la DB
-    } catch (err: any) {
-      console.error(err);
-      alert("Erreur lors de la création : " + err.message);
-    } finally {
-      setIsRegisteringPasskey(false);
-    }
-  };
-
-  const handleDeletePasskeyClick = (passkey: Passkey) => {
-    setDeletingPasskey(passkey);
-  };
-
-  const confirmDeletePasskey = async () => {
-    if (deletingPasskey) {
-      try {
-        const { error } = await supabase
-          .from('passkeys')
-          .delete()
-          .eq('id', deletingPasskey.id);
-
-        if (error) throw error;
-
-        setPasskeys(prev => prev.filter(p => p.id !== deletingPasskey.id));
-        setDeletingPasskey(null);
-      } catch (err: any) {
-        console.error(err);
-        alert("Erreur lors de la suppression : " + err.message);
-      }
-    }
-  };
-
-  const cancelDeletePasskey = () => {
-    setDeletingPasskey(null);
   };
 
   if (loading) {
@@ -348,7 +277,7 @@ const Settings: React.FC<SettingsProps> = ({ onMenuToggle, onNavigate }) => {
             )}
           </div>
 
-          {/* Colonne droite - Profil & Sécurité */}
+          {/* Colonne droite - Profil */}
           <div className="space-y-6">
             {/* Carte Profil */}
             <div className="bg-white rounded-lg shadow-md border border-gray-200">
@@ -376,144 +305,8 @@ const Settings: React.FC<SettingsProps> = ({ onMenuToggle, onNavigate }) => {
                 </div>
               </div>
             </div>
-
-            {/* Carte Sécurité */}
-            <div className="bg-white rounded-lg shadow-md border border-gray-200">
-              <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-                <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-                  <Shield className="w-5 h-5 text-gray-600" />
-                  Passkeys (Biométrie)
-                </h3>
-                <button
-                  onClick={() => setIsPasskeyModalOpen(true)}
-                  disabled={isRegisteringPasskey}
-                  className="flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors disabled:opacity-50"
-                >
-                  <Plus className="w-4 h-4" />
-                  Ajouter
-                </button>
-              </div>
-
-              <div className="p-4">
-                {isRegisteringPasskey && (
-                  <div className="mb-4 text-sm text-blue-600 flex items-center gap-2 bg-blue-50 p-3 rounded-lg">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Enregistrement de la clé en cours...
-                  </div>
-                )}
-
-                {passkeys.length > 0 ? (
-                  <div className="space-y-2">
-                    {passkeys.map((pk) => (
-                      <div 
-                        key={pk.id} 
-                        className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors group"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="bg-gray-100 p-2 rounded-full">
-                            <Key className="w-4 h-4 text-gray-600" />
-                          </div>
-                          <div>
-                            <span className="text-sm font-medium text-gray-700 block">
-                              {pk.name}
-                            </span>
-                            <span className="text-xs text-gray-400">
-                              Ajouté le {new Date(pk.created_at).toLocaleDateString()}
-                            </span>
-                          </div>
-                        </div>
-                        <button 
-                          onClick={() => handleDeletePasskeyClick(pk)} 
-                          className="text-gray-400 hover:text-red-600 p-2 rounded-full hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100"
-                          title="Supprimer"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-8">
-                    <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                      <Key className="w-6 h-6 text-gray-400" />
-                    </div>
-                    <p className="text-sm text-gray-500">
-                      Aucune passkey configurée.
-                      <br/>
-                      Ajoutez FaceID, TouchID ou une clé USB.
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
           </div>
         </div>
-
-        {/* Modals */}
-        {isPasskeyModalOpen && (
-          <PasskeyModal
-            onSave={handleCreatePasskey}
-            onClose={() => setIsPasskeyModalOpen(false)}
-          />
-        )}
-
-        {/* Delete Passkey Confirmation Modal */}
-        {deletingPasskey && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-            <div className="relative w-full max-w-md" style={{ animation: 'scaleIn 0.3s ease-out' }}>
-              <div className="absolute inset-0 bg-gradient-to-br from-red-500 via-rose-600 to-pink-700 opacity-95 rounded-3xl" />
-              <div className="absolute inset-0 backdrop-blur-xl bg-white/10 rounded-3xl" />
-              
-              <div className="absolute -top-10 -left-10 w-40 h-40 bg-red-400/30 rounded-full blur-3xl animate-pulse" style={{ animationDuration: '3s' }} />
-              <div className="absolute -bottom-10 -right-10 w-32 h-32 bg-pink-400/30 rounded-full blur-2xl animate-pulse" style={{ animationDuration: '4s', animationDelay: '1s' }} />
-              
-              <div className="relative p-8">
-                <button onClick={cancelDeletePasskey} className="absolute top-4 right-4 p-2 rounded-xl bg-white/15 backdrop-blur-md hover:bg-white/25 transition-all duration-300 border border-white/30 hover:scale-110 group">
-                  <X className="w-5 h-5 text-white group-hover:rotate-90 transition-transform duration-300" />
-                </button>
-
-                <div className="flex justify-center mb-6">
-                  <div className="relative">
-                    <div className="absolute inset-0 bg-white/30 rounded-full blur-xl" />
-                    <div className="relative w-20 h-20 bg-white/20 backdrop-blur-lg rounded-full flex items-center justify-center border-2 border-white/40 shadow-2xl">
-                      <AlertTriangle className="w-10 h-10 text-white drop-shadow-2xl animate-pulse" />
-                    </div>
-                  </div>
-                </div>
-
-                <h3 className="text-2xl font-bold text-white text-center mb-3 drop-shadow-lg">
-                  Supprimer la passkey ?
-                </h3>
-
-                <div className="bg-white/15 backdrop-blur-md rounded-2xl p-5 mb-6 border border-white/30 shadow-xl">
-                  <p className="text-white/95 text-center leading-relaxed drop-shadow-md">
-                    Voulez-vous vraiment supprimer la passkey{' '}
-                    <span className="font-bold text-white">"{deletingPasskey.name}"</span> ?
-                  </p>
-                  <p className="text-white/80 text-sm text-center mt-2 drop-shadow">
-                    Cette action est irréversible.
-                  </p>
-                </div>
-
-                <div className="flex gap-3">
-                  <button onClick={cancelDeletePasskey} className="flex-1 px-6 py-4 bg-white/20 backdrop-blur-lg hover:bg-white/30 text-white font-semibold rounded-xl transition-all duration-300 border border-white/40 hover:scale-105 shadow-lg">
-                    Annuler
-                  </button>
-                  <button onClick={confirmDeletePasskey} className="flex-1 px-6 py-4 bg-white/90 hover:bg-white text-red-600 font-bold rounded-xl transition-all duration-300 border border-white shadow-2xl hover:scale-105 hover:shadow-red-500/50">
-                    Supprimer
-                  </button>
-                </div>
-              </div>
-
-              <style>{`
-                @keyframes scaleIn {
-                  from { transform: scale(0.9); opacity: 0; }
-                  to { transform: scale(1); opacity: 1; }
-                }
-              `}</style>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

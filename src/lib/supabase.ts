@@ -7,12 +7,14 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables');
 }
 
-export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
+// ✅ Configuration CORRIGÉE avec persistance de session
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
-    storage: localStorage,
+    persistSession: true,        // ✅ Active la persistance
+    autoRefreshToken: true,       // ✅ Rafraîchit automatiquement le token
+    detectSessionInUrl: true,     // ✅ Détecte les sessions dans l'URL
+    storage: localStorage,        // ✅ Utilise localStorage
+    storageKey: 'supabase.auth.token', // Clé de stockage personnalisée (optionnel)
   },
 });
 
@@ -40,29 +42,36 @@ export const signUp = async (email: string, password: string) => {
 
 export const signOut = async () => {
   const { error } = await supabase.auth.signOut();
+  
+  // Nettoyer UNIQUEMENT le cache applicatif, pas tout le localStorage
   sessionStorage.clear();
+  
   return { error };
 };
 
 export const getCurrentUser = async () => {
-  const { data: { user }, error } = await supabase.auth.getUser();
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
   return { user, error };
 };
 
 export const getSession = async () => {
-  const { data: { session }, error } = await supabase.auth.getSession();
+  const {
+    data: { session },
+    error,
+  } = await supabase.auth.getSession();
   return { session, error };
 };
 
-// --- TYPES DATABASE COMPLETS ---
-
-export type Json =
-  | string
-  | number
-  | boolean
-  | null
-  | { [key: string]: Json | undefined }
-  | Json[]
+// Helper function to create admin user
+export const createUserWithEmailAndPassword = async (
+  email: string,
+  password: string
+) => {
+  return await signUp(email, password);
+};
 
 export type Database = {
   public: {
@@ -73,8 +82,6 @@ export type Database = {
           email: string;
           full_name: string;
           role: 'admin' | 'user';
-          payment_status?: string;
-          subscription_status?: string;
           created_at: string;
           updated_at: string;
         };
@@ -83,8 +90,6 @@ export type Database = {
           email: string;
           full_name: string;
           role?: 'admin' | 'user';
-          payment_status?: string;
-          subscription_status?: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -93,8 +98,6 @@ export type Database = {
           email?: string;
           full_name?: string;
           role?: 'admin' | 'user';
-          payment_status?: string;
-          subscription_status?: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -128,7 +131,7 @@ export type Database = {
           address: string;
           contact_person_name: string;
           contact_person_phone: string;
-          frequency: string;
+          frequency: 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'custom';
           custom_frequency_days: number | null;
           notes: string | null;
           created_at: string;
@@ -142,7 +145,7 @@ export type Database = {
           address: string;
           contact_person_name: string;
           contact_person_phone: string;
-          frequency?: string;
+          frequency?: 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'custom';
           custom_frequency_days?: number | null;
           notes?: string | null;
           created_at?: string;
@@ -156,7 +159,7 @@ export type Database = {
           address?: string;
           contact_person_name?: string;
           contact_person_phone?: string;
-          frequency?: string;
+          frequency?: 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'custom';
           custom_frequency_days?: number | null;
           notes?: string | null;
           created_at?: string;
@@ -174,7 +177,7 @@ export type Database = {
           duration: number;
           status: 'scheduled' | 'completed' | 'cancelled';
           notes: string | null;
-          price: string | null; // Supabase returns decimal as string usually, handled in frontend
+          price: number | null;
           created_at: string;
           updated_at: string;
         };
@@ -188,7 +191,7 @@ export type Database = {
           duration?: number;
           status?: 'scheduled' | 'completed' | 'cancelled';
           notes?: string | null;
-          price?: number | string | null;
+          price?: number | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -202,195 +205,7 @@ export type Database = {
           duration?: number;
           status?: 'scheduled' | 'completed' | 'cancelled';
           notes?: string | null;
-          price?: number | string | null;
-          created_at?: string;
-          updated_at?: string;
-        };
-      };
-      // --- NOUVELLES TABLES AJOUTÉES POUR CORRIGER LE BUILD ---
-      expenses: {
-        Row: {
-          id: string;
-          user_id: string;
-          description: string;
-          amount: number;
-          category: string;
-          date: string;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          user_id: string;
-          description: string;
-          amount: number;
-          category: string;
-          date: string;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          user_id?: string;
-          description?: string;
-          amount?: number;
-          category?: string;
-          date?: string;
-          created_at?: string;
-          updated_at?: string;
-        };
-      };
-      activity_logs: {
-        Row: {
-          id: string;
-          user_id: string;
-          action_type: string;
-          entity_type: string;
-          entity_id: string;
-          entity_name: string;
-          description: string;
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          user_id: string;
-          action_type: string;
-          entity_type: string;
-          entity_id: string;
-          entity_name: string;
-          description: string;
-          created_at?: string;
-        };
-        Update: {
-          id?: string;
-          user_id?: string;
-          action_type?: string;
-          entity_type?: string;
-          entity_id?: string;
-          entity_name?: string;
-          description?: string;
-          created_at?: string;
-        };
-      };
-      notifications: {
-        Row: {
-          id: string;
-          user_id: string;
-          client_id?: string | null;
-          type: string;
-          title: string;
-          message: string;
-          date: string;
-          priority: 'high' | 'medium' | 'low';
-          completed: boolean;
-          completed_at?: string | null;
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          user_id: string;
-          client_id?: string | null;
-          type: string;
-          title: string;
-          message: string;
-          date: string;
-          priority?: 'high' | 'medium' | 'low';
-          completed?: boolean;
-          completed_at?: string | null;
-          created_at?: string;
-        };
-        Update: {
-          id?: string;
-          user_id?: string;
-          client_id?: string | null;
-          type?: string;
-          title?: string;
-          message?: string;
-          date?: string;
-          priority?: 'high' | 'medium' | 'low';
-          completed?: boolean;
-          completed_at?: string | null;
-          created_at?: string;
-        };
-      };
-      passkeys: {
-        Row: {
-          id: string;
-          user_id: string;
-          name: string;
-          credential_id: string;
-          public_key: string;
-          counter: number;
-          transports: Json;
-          created_at: string;
-          last_used_at?: string;
-        };
-        Insert: {
-          id?: string;
-          user_id: string;
-          name: string;
-          credential_id: string;
-          public_key: string;
-          counter: number;
-          transports?: Json;
-          created_at?: string;
-          last_used_at?: string;
-        };
-        Update: {
-          id?: string;
-          user_id?: string;
-          name?: string;
-          credential_id?: string;
-          public_key?: string;
-          counter?: number;
-          transports?: Json;
-          created_at?: string;
-          last_used_at?: string;
-        };
-      };
-      user_settings: {
-        Row: {
-          id: string;
-          user_id: string;
-          min_time_between_appointments: number;
-          business_hours_start: string;
-          business_hours_end: string;
-          frequency_options: Json;
-          expense_categories: Json;
-          notification_days_before: number;
-          show_upcoming_appointments: boolean;
-          show_frequency_reminders: boolean;
-          upcoming_appointments_days: number;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          user_id: string;
-          min_time_between_appointments?: number;
-          business_hours_start?: string;
-          business_hours_end?: string;
-          frequency_options?: Json;
-          expense_categories?: Json;
-          notification_days_before?: number;
-          show_upcoming_appointments?: boolean;
-          show_frequency_reminders?: boolean;
-          upcoming_appointments_days?: number;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          user_id?: string;
-          min_time_between_appointments?: number;
-          business_hours_start?: string;
-          business_hours_end?: string;
-          frequency_options?: Json;
-          expense_categories?: Json;
-          notification_days_before?: number;
-          show_upcoming_appointments?: boolean;
-          show_frequency_reminders?: boolean;
-          upcoming_appointments_days?: number;
+          price?: number | null;
           created_at?: string;
           updated_at?: string;
         };

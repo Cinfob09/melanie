@@ -17,6 +17,8 @@ const TaxCalculator: React.FC<TaxCalculatorProps> = ({
 }) => {
   const TAX_TPS = 0.05; // 5%
   const TAX_TVQ = 0.09975; // 9.975%
+  // Facteur de division pour extraire les taxes d'un montant TTC (1 + 0.05 + 0.09975)
+  const TOTAL_RATE = 1 + TAX_TPS + TAX_TVQ; 
 
   const [viewMode, setViewMode] = useState<ViewMode>('combined');
   const [periodMode, setPeriodMode] = useState<PeriodMode>('monthly');
@@ -52,16 +54,16 @@ const TaxCalculator: React.FC<TaxCalculatorProps> = ({
       };
     }
 
-    // Filtrer les rendez-vous complétés pour la période
+    // 1. Filtrer les données pour la période
     const periodAppointments = appointments.filter(
       (apt) =>
         apt.status === 'completed' && apt.price && filterByPeriod(apt.date)
     );
 
-    // Filtrer les dépenses pour la période
     const periodExpenses = expenses.filter((exp) => filterByPeriod(exp.date));
 
-    // Revenus (taxes collectées - à remettre au gouvernement)
+    // 2. REVENUS (Logique : Prix de base + Taxes ajoutées)
+    // On assume que le prix du RDV est le prix de base (avant taxes)
     const revenueBeforeTax = periodAppointments.reduce(
       (sum, apt) => sum + (apt.price || 0),
       0
@@ -70,16 +72,21 @@ const TaxCalculator: React.FC<TaxCalculatorProps> = ({
     const revenueTVQ = revenueBeforeTax * TAX_TVQ;
     const revenueTaxesTotal = revenueTPS + revenueTVQ;
 
-    // Dépenses (taxes payées - crédit à récupérer)
-    const expensesBeforeTax = periodExpenses.reduce(
+    // 3. DÉPENSES (Logique : Prix Total -> Extraction des taxes)
+    // On assume que le montant de la dépense saisie est le montant final payé (TTC)
+    const expensesTotalTTC = periodExpenses.reduce(
       (sum, exp) => sum + exp.amount,
       0
     );
+
+    // Extraction des montants (règle de trois inverse)
+    const expensesBeforeTax = expensesTotalTTC / TOTAL_RATE;
     const expensesTPS = expensesBeforeTax * TAX_TPS;
     const expensesTVQ = expensesBeforeTax * TAX_TVQ;
     const expensesTaxesTotal = expensesTPS + expensesTVQ;
 
-    // Calcul net (ce qu'on doit/reçoit du gouvernement)
+    // 4. CALCUL NET (Ce qu'on doit payer ou recevoir)
+    // Taxes collectées (Revenus) - Taxes payées (Dépenses/Crédits)
     const netTPS = revenueTPS - expensesTPS;
     const netTVQ = revenueTVQ - expensesTVQ;
     const netTotal = netTPS + netTVQ;
@@ -95,7 +102,7 @@ const TaxCalculator: React.FC<TaxCalculatorProps> = ({
         beforeTax: expensesBeforeTax,
         tps: expensesTPS,
         tvq: expensesTVQ,
-        total: expensesTaxesTotal,
+        total: expensesTaxesTotal, // C'est le total des taxes récupérables
       },
       net: {
         tps: netTPS,
@@ -372,8 +379,7 @@ const TaxCalculator: React.FC<TaxCalculatorProps> = ({
 
           <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
             <p className="text-sm text-blue-800">
-              <strong>Note:</strong> Ces taxes ont été payées sur vos dépenses
-              professionnelles et peuvent être récupérées comme crédits.
+              <strong>Note:</strong> Les taxes ont été extraites du montant total de vos dépenses (TTC) pour calculer les crédits récupérables.
             </p>
           </div>
         </div>

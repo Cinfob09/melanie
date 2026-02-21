@@ -128,6 +128,8 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
   const [showTimeGrid, setShowTimeGrid] = useState(false);
   const [pendingTime, setPendingTime] = useState<string | null>(null);
   const [warningMessage, setWarningMessage] = useState('');
+  const [showCustomTimeInput, setShowCustomTimeInput] = useState(false);
+  const [customTimeValue, setCustomTimeValue] = useState('');
 
   const minTimeBetween = preferences?.min_time_between_appointments || 90;
   const businessStart = preferences?.business_hours_start?.slice(0, 5) || '08:00';
@@ -204,6 +206,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
 
     let hasConflict = false;
     let minGap = Infinity;
+    let conflictingAptTime = '';
 
     for (const apt of otherApts) {
       const aptTimeClean = apt.time.slice(0, 5);
@@ -217,8 +220,15 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
 
       const gapBefore = (slotStart.getTime() - aptEnd.getTime()) / 60000;
       const gapAfter = (aptStart.getTime() - slotEnd.getTime()) / 60000;
-      if (gapBefore >= 0) minGap = Math.min(minGap, gapBefore);
-      if (gapAfter >= 0) minGap = Math.min(minGap, gapAfter);
+      
+      if (gapBefore >= 0 && gapBefore < minGap) {
+        minGap = gapBefore;
+        conflictingAptTime = aptTimeClean;
+      }
+      if (gapAfter >= 0 && gapAfter < minGap) {
+        minGap = gapAfter;
+        conflictingAptTime = aptTimeClean;
+      }
     }
 
     if (hasConflict) return { time, available: false };
@@ -227,7 +237,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
     if (isPast) {
       warningMsg = 'Créneau passé.';
     } else if (minGap < minTimeBetween && minGap !== Infinity) {
-      warningMsg = `Attention : seulement ${Math.round(minGap)} min d'écart.`;
+      warningMsg = `Attention : seulement ${Math.round(minGap)} min d'écart. À cause du rendez-vous à ${conflictingAptTime}, cela ne fait pas l'intervalle de 1h30.`;
     }
 
     return { time, available: true, warning: warningMsg || undefined };
@@ -325,6 +335,28 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
     } else {
       setFormData((prev) => ({ ...prev, time: slot.time }));
       setShowTimeGrid(false);
+      setShowCustomTimeInput(false);
+    }
+  };
+
+  const handleCustomTimeSubmit = () => {
+    if (!customTimeValue) return;
+    
+    const slot = checkTimeSlotAvailability(formData.date, customTimeValue, formData.duration);
+    
+    if (!slot.available) {
+      alert('Ce créneau n\'est pas disponible (conflit avec un autre rendez-vous).');
+      return;
+    }
+
+    if (slot.warning) {
+      setWarningMessage(slot.warning);
+      setPendingTime(customTimeValue);
+      setShowWarningModal(true);
+    } else {
+      setFormData((prev) => ({ ...prev, time: customTimeValue }));
+      setShowTimeGrid(false);
+      setShowCustomTimeInput(false);
     }
   };
 
@@ -592,7 +624,16 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
                 <span className="text-sm font-medium text-gray-700">
                   Disponibilités {isLoadingSlots && <span className="text-xs text-blue-500">(Chargement...)</span>}
                 </span>
-                <button type="button" onClick={() => setShowTimeGrid(false)} className="text-xs text-blue-600 font-medium p-2">Fermer</button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowCustomTimeInput(!showCustomTimeInput)}
+                    className="text-xs text-blue-600 font-medium p-2 hover:bg-white rounded-md transition-colors"
+                  >
+                    Personnaliser
+                  </button>
+                  <button type="button" onClick={() => setShowTimeGrid(false)} className="text-xs text-blue-600 font-medium p-2">Fermer</button>
+                </div>
               </div>
               <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-64 overflow-y-auto">
                 {availableSlots.map((slot) => (
@@ -616,6 +657,31 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
                   </button>
                 ))}
               </div>
+
+              {showCustomTimeInput && (
+                <div className="mt-4 p-3 bg-white border border-gray-200 rounded-lg flex items-center gap-2 animate-in slide-in-from-top-2">
+                  <input
+                    type="time"
+                    value={customTimeValue}
+                    onChange={(e) => setCustomTimeValue(e.target.value)}
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleCustomTimeSubmit}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium whitespace-nowrap"
+                  >
+                    OK
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowCustomTimeInput(false)}
+                    className="p-2 text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
